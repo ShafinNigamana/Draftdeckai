@@ -7,6 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { 
   Image as ImageIcon, 
   Upload, 
@@ -49,7 +56,12 @@ export function PostGenerationImageEditor({
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoadingAI, setIsLoadingAI] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
-  const [selectedTab, setSelectedTab] = useState<"ai" | "search" | "upload">("ai");
+  const [selectedTab, setSelectedTab] = useState<"ai" | "search" | "upload" | "generate">("ai");
+
+  const [customPrompt, setCustomPrompt] = useState("");
+  const [imageStyle, setImageStyle] = useState("illustration");
+  const [generatedUrl, setGeneratedUrl] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const handleGetAISuggestions = async () => {
     setIsLoadingAI(true);
@@ -125,6 +137,52 @@ export function PostGenerationImageEditor({
     onClose();
   };
 
+  const handleGenerateAIImage = async () => {
+    if (!customPrompt.trim() || isGenerating) return;
+
+    setIsGenerating(true);
+    setGeneratedUrl("");
+
+    const stylePresets: Record<string, string> = {
+      illustration: "modern professional illustration, clean vector style, flat design, vibrant colors, minimalist composition, digital illustration",
+      photo: "high-quality professional photograph, studio lighting, clean composition, commercial quality, 8k resolution",
+      diagram: "clean professional diagram, clear labels, organized layout, business presentation style, technical infographic, flowchart design",
+      wireframe: "professional UI wireframe mockup, clean layout, placeholder elements, grid-based design, grayscale with accent highlights, blueprint style",
+      logo: "modern minimalist logo design, clean typography, simple geometry, memorable design, scalable vector style",
+      infographic: "professional infographic illustration, clear data hierarchy, modern icons, organized sections, visual storytelling",
+      technology: "futuristic technology visualization, digital elements, circuit patterns, modern tech aesthetic, glowing accents, sci-fi design"
+    };
+
+    const stylePresetText = stylePresets[imageStyle] || stylePresets.illustration;
+    const promptToSend = `${customPrompt.trim()}, ${stylePresetText}`;
+
+    try {
+      const response = await fetch("/api/presentations/regenerate-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: promptToSend,
+          size: "1024x576" // 16:9 ratio optimized for widescreen slides
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to generate image from AI");
+      }
+
+      const data = await response.json();
+      if (data.success && data.imageUrl) {
+        setGeneratedUrl(data.imageUrl);
+      } else {
+        throw new Error(data.error || "Failed to generate image");
+      }
+    } catch (error) {
+      console.error("AI Generation error:", error);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
@@ -139,10 +197,14 @@ export function PostGenerationImageEditor({
         </DialogHeader>
 
         <Tabs value={selectedTab} onValueChange={(v) => setSelectedTab(v as any)} className="flex-1 flex flex-col">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="ai" className="gap-2">
               <Sparkles className="h-4 w-4" />
               AI Suggestions
+            </TabsTrigger>
+            <TabsTrigger value="generate" className="gap-2">
+              <Sparkles className="h-4 w-4" />
+              Generate with AI
             </TabsTrigger>
             <TabsTrigger value="search" className="gap-2">
               <Search className="h-4 w-4" />
@@ -259,6 +321,91 @@ export function PostGenerationImageEditor({
                 </div>
               </div>
             )}
+          </TabsContent>
+
+          {/* Generate with AI Tab */}
+          <TabsContent value="generate" className="flex-1 overflow-auto mt-4">
+            <div className="space-y-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="custom-prompt">Image Description Prompt</Label>
+                <Input
+                  id="custom-prompt"
+                  placeholder="Describe the image you want to generate... (e.g., 'A modern futuristic workspace with glass desks and holographic screens')"
+                  value={customPrompt}
+                  onChange={(e) => setCustomPrompt(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleGenerateAIImage()}
+                />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="image-style">Visual Style</Label>
+                <Select value={imageStyle} onValueChange={setImageStyle}>
+                  <SelectTrigger id="image-style" className="w-full">
+                    <SelectValue placeholder="Select Style" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="illustration">Vector Illustration</SelectItem>
+                    <SelectItem value="photo">Photorealistic</SelectItem>
+                    <SelectItem value="diagram">Clean Diagram</SelectItem>
+                    <SelectItem value="wireframe">UI Wireframe</SelectItem>
+                    <SelectItem value="logo">Minimalist Logo</SelectItem>
+                    <SelectItem value="infographic">Infographic</SelectItem>
+                    <SelectItem value="technology">Future Tech Aesthetic</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Button
+                onClick={handleGenerateAIImage}
+                disabled={isGenerating || !customPrompt.trim()}
+                className="w-full bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-600 hover:to-amber-600 text-white font-semibold h-11"
+              >
+                {isGenerating ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Generating with FLUX...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Generate Image
+                  </>
+                )}
+              </Button>
+
+              {generatedUrl && (
+                <div className="space-y-3 pt-2">
+                  <Label className="text-sm font-medium">Generated Preview</Label>
+                  <div className="relative border rounded-lg overflow-hidden bg-gray-50 aspect-video flex items-center justify-center">
+                    <Image
+                      src={generatedUrl}
+                      alt="Generated AI Preview"
+                      className="w-full h-full object-cover"
+                      width={1024}
+                      height={576}
+                      unoptimized
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => handleImageSelect(generatedUrl)}
+                      className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      <Check className="h-4 w-4 mr-2" />
+                      Apply to Slide
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setGeneratedUrl("")}
+                      className="flex-1"
+                    >
+                      <X className="h-4 w-4 mr-2" />
+                      Discard
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
           </TabsContent>
 
           {/* Search Tab */}
